@@ -36,12 +36,26 @@
   </script>
 
   <script>
+    // tokenize string and combine them with whitespace
+    function tokenize(text) {
+      text = text.toLowerCase()
+      var it = Intl.v8BreakIterator(["en"], { type: 'word' })
+      it.adoptText(text)
+      var words = []
+      var cur = 0, prev = 0
+      while (cur < text.length) {
+        prev = cur
+        cur = it.next()
+        words.push(text.substring(prev, cur))
+      }
+      return words.join(" ")
+    }
     // And afterwards we can use all the functionality defined in wasm.
     function doSearch() {
       let value = document.getElementById("demo").value;
       console.log(`Search query: ${value}`);
 
-      const results = search(value, 5);
+      const results = search(tokenize(value), 5);
 
       console.log(`Results: ${results}`);
 
