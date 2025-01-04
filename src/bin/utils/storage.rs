@@ -9,6 +9,9 @@ use strip_markdown::strip_markdown;
 use tinysearch::{Filters, PostId, Storage};
 use xorf::HashProxy;
 
+use rust_icu::brk;
+use rust_icu::sys;
+
 pub fn write(posts: Posts, path: &path::PathBuf) -> Result<(), Error> {
     let filters = build(posts)?;
     trace!("Storage::from");
@@ -31,14 +34,39 @@ fn cleanup(s: String) -> String {
 }
 
 fn tokenize(words: &str, stopwords: &HashSet<String>) -> HashSet<String> {
-    cleanup(strip_markdown(words))
-        .split_whitespace()
-        .filter(|&word| !word.trim().is_empty())
-        .map(str::to_lowercase)
-        .filter(|word| !stopwords.contains(word))
-        .collect()
-}
+    let text = cleanup(strip_markdown(words));
 
+    let text_clone = text.clone();
+    let mut ids = text_clone.char_indices().skip(1);
+
+    let iter =
+        brk::UBreakIterator::try_new(sys::UBreakIteratorType::UBRK_WORD, "en", &text).unwrap();
+    iter.scan((0, 0), move |s, x| {
+        let (l, prev) = *s;
+        let x = x as usize;
+        if let Some((r, _)) = ids.nth(x - prev - 1) {
+            *s = (r, x);
+            Some(text[l..r].to_string())  // `String`に変換して返す
+        } else {
+            Some(text[l..].to_string())  // `String`に変換して返す
+        }
+    })
+    .filter_map(|word| {
+        let word = word.trim().to_lowercase();
+        if !word.is_empty() {
+            Some(word)
+        } else {
+            None
+        }
+    })
+    .filter(|word| !stopwords.contains(word))
+    .collect()
+}
+#[test]
+fn test_tokenize() {
+    let tokens: Vec<_> = tokenize("今日はいい天気だ").collect();
+    assert_eq!(tokens, &["今日", "は", "いい", "天気", "だ"])
+}
 // Read all posts and generate Bloomfilters from them.
 #[no_mangle]
 pub fn generate_filters(posts: HashMap<PostId, Option<String>>) -> Result<Filters, Error> {

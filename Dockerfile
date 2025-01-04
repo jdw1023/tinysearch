@@ -3,9 +3,9 @@
 #   - wasm-pack
 #   - terser
 
-ARG TINY_REPO=https://github.com/tinysearch/tinysearch
-ARG TINY_BRANCH=master
-ARG RUST_IMAGE=rust:alpine
+ARG TINY_REPO=https://github.com/rikuson/tinysearch
+ARG TINY_BRANCH=japanese
+ARG RUST_IMAGE=filipfilmar/rust_icu_buildenv:1.74.0
 
 FROM $RUST_IMAGE AS builder
 
@@ -15,20 +15,16 @@ ARG TINY_BRANCH
 WORKDIR /build
 
 # Install dependencies
-RUN apk add --update --no-cache --virtual \
-    .build-deps \
-    musl-dev \
-    openssl-dev \
-    gcc \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    openssl \
     curl \
     git \
     npm \
-    gcc \
     ca-certificates \
-    libc6-compat \
     binaryen && \
-    ln -s /lib64/ld-linux-x86-64.so.2 /lib/ld64.so.1 && \
-    npm install terser -g
+    npm install terser -g && \
+    rm -rf /var/lib/apt/lists/*
 
 # Verify the installation
 RUN terser --version
@@ -37,21 +33,23 @@ RUN terser --version
 RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
 # Verify the installation
-RUN wasm-pack --version && which wasm-pack 
+RUN wasm-pack --version && which wasm-pack
 
 # Clone the repo and build the binary
 RUN git clone --branch "$TINY_BRANCH" "$TINY_REPO" tinysearch && \
     cd tinysearch && \
     cargo build --release --features=bin && \
-    cp target/release/tinysearch $CARGO_HOME/bin
+    cp target/release/tinysearch /usr/local/bin/
 
 FROM $RUST_IMAGE
 
 WORKDIR /app
 
 # Install runtime dependencies
-RUN apk add --update --no-cache libc6-compat musl-dev binaryen openssl-dev && \
-    ln -s /lib64/ld-linux-x86-64.so.2 /lib/ld64.so.1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    binaryen && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy the build binaries and tinysearch directory
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
@@ -63,9 +61,7 @@ COPY --from=builder /build/tinysearch/ /engine
 
 # Initialize crate cache
 RUN echo '[{"title":"","body":"","url":""}]' > build.json && \
-    tinysearch --engine-version 'path= "/engine"' build.json && \
+    tinysearch build.json && \
     rm -r build.json wasm_output
 
 ENTRYPOINT ["tinysearch"]
-# Use the engine we built above and not the one from crates.io
-CMD ["--engine-version", "path= \"/engine\""]
